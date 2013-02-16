@@ -1,0 +1,117 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+        "http://www.w3.org/TR/html4/loose.dtd">
+<html>
+
+<head>
+
+    <title> Calendar Plugin </title>
+    <link href="../css/main.css" rel="stylesheet">
+
+
+    <style type="text/css">
+
+        .calendar {
+            margin:100px 0px 0px 80px;
+        }
+
+    </style>
+
+</head>
+
+    <body>
+
+        <div class="calendar" id="calendar-anchor"></div>
+        <div class="calendar" id="calendar-anchor2"></div>
+        <div class="calendar" id="calendar-anchor3"></div>
+        <div class="calendar" id="calendar-anchor4"></div>
+        <div class="calendar" id="calendar-anchor5"></div>
+
+        <script src="dependencies/jquery.1.8.3.js"></script>
+        <script src="dependencies/d3.v2.js"></script>
+        <script src="../scripts/mcalendar.js"></script>
+
+        <script>
+
+            d3.json("http://localhost:5555/calendar/example/sampledata/data_day.json", function (results) {
+                var accessors, getId, getCount,
+                        events, onclick, onmouseover, format;
+
+                getId = function (obj) {
+
+                    return obj._groupby;
+                }
+
+                getCount = function (obj) {
+                    return obj._count;
+                }
+
+                onclick = function (d) {
+                    console.log("click")
+                    console.log(d);
+                }
+
+                onmouseover = function (d) {
+                    console.log("mouseover")
+                    console.log(d);
+                }
+
+                events = { onclick: onclick,
+                    onmouseover: onmouseover
+                }
+
+                accessors = {getTimestamp: getId,
+                    getCount: getCount}
+
+
+                var obj = {viewMode: "month",
+                    showLabel: true,
+                    data:results.data,
+                    accessors: accessors,
+                    events:  events,
+                    dimensions: {width:100, height:100}};
+
+
+                var obj2 = {viewMode: "week",
+                    showLabel: true,
+                    data:results.data,
+                    accessors: accessors,
+                    events:  events,
+                    dimensions: {width:75, height:15}};
+
+
+                var obj3 = {
+                    showLabel: {main:false, year:true, month:true},
+                    data:results.data,
+                    margin: {t:5, r:5, b:20, l:5},
+                    dimensions: {width:500, height:200, autoGrow: true},
+                    accessors: accessors,
+                    events:  events};
+
+
+                var obj4 = {
+                    showLabel: {main:false, year:true, month:true},
+                    data:results.data,
+                    margin: {t:5, r:5, b:20, l:5},
+                    dimensions: {width:500, height:200},
+                    accessors: accessors,
+                    events:  events};
+
+                //Month view ---------
+                $("#calendar-anchor").mcalendar(obj);
+
+                //week view ----------
+                $("#calendar-anchor2").mcalendar(obj2);
+
+                //Year view ---------
+                $("#calendar-anchor3").mcalendar(obj3);
+
+                $("#calendar-anchor4").mcalendar(obj4);
+
+            });
+
+
+        </script>
+
+    </body>
+
+</html>
