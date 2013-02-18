@@ -3,14 +3,136 @@
 (function( $ ){
 
     var MCAL_CLASS           = "mcalendar",
-        MCAL_HTML            = "<div class='"+ MCAL_CLASS +"'> </div> <div class='label label-main'> </div>",
+        GLABEL               = "mcalendar-label",
+        MCAL_HTML            = "<div class='"+ MCAL_CLASS +"'> </div> <div class='"+ GLABEL +" label-main'> </div>",
         MIN_M_DIMENSIONS     = {width: 50, height: 50},
         MIN_W_DIMENSIONS     = {width: 50, height: 10},
         MIN_F_DIMENSIONS     = {width: 600, height: 50, autoGrow: false},
         MODES                = ["week", "month", "full"],
         MONTHS               = ["January", "February", "March", "April", "May", "June", "July",
                                 "August", "September", "October", "November", "December"],
+        WEEK_DAY_FORMAT      = d3.time.format("%w"),
+        MONTH_FORMAT         = d3.time.format("%Y-%m"),
+        DAY_FORMAT           = d3.time.format("%Y-%m-%d"),
         Calendar;
+
+
+    // Utility functions  --------------------------------------------------------------------
+
+    /**
+     * Okay, we're not fully parsing an ISO because
+     * we're going to allow spaces and the lack of
+     * T and Z characters
+     * @param dateString
+     * @return {Date}
+     * @constructor
+     */
+    function ISOToDate (dateString) {
+
+        if (!dateString || typeof dateString !== 'string') {
+            throw new Error("Argument to ISOToDate must be a string");
+        }
+
+        var yyyy = parseInt(dateString.slice(0, 4), 10),
+            mm   = parseInt(dateString.slice(5, 7), 10) - 1,
+            dd   = parseInt(dateString.slice(8, 10), 10),
+            HH   = parseInt(dateString.slice(11, 13), 10),
+            MM   = parseInt(dateString.slice(14, 16), 10),
+            SS   = parseInt(dateString.slice(17, 19), 10),
+            dateObject = new Date(yyyy, mm, dd, HH, MM, SS);
+
+        return dateObject;
+    };
+
+    /**
+     * This is used to determine the correct show label parameter. The result
+     * of this function will be used to show and hide labels
+     * @param showLabel
+     * @return {Object}
+     */
+    function determineLabelParam (showLabel) {
+
+        var toRet = {showMain: false, showYear: false, showMonth:false};
+
+        if(!showLabel) {
+            return toRet;
+        }
+
+        if(typeof showLabel === 'boolean') {
+            toRet.showMain = showLabel;
+            return toRet;
+        }
+
+        if(typeof showLabel === 'object') {
+
+            toRet.showMain = !!showLabel.main;
+            toRet.showYear = !!showLabel.year;
+            toRet.showMonth =!!showLabel.month;
+
+            return toRet;
+        }
+
+        return toRet;
+    }
+
+    /**
+     * Tokenize key to year, month and
+     * convert from months indexed starting from 1 to zero
+     * IE: from Jan = 1 to Jan = 0
+     * @param date
+     * @return {*}
+     * @private
+     */
+    function tokenizeDateStr(date) {
+
+        return $.map(date.split("-"), function(item, index) {
+
+            //months are 0-11
+            if(index === 1) {
+                return (parseInt(item, 10) - 1);
+            }
+
+            return parseInt(item, 10)
+        });
+    };
+
+    /**
+     * ensure the dimensions don't have a width and height smaller than the default
+     * specified in the fallback object
+     * @param dimensions
+     * @param fallback
+     * @return {Object}
+     * @private
+     */
+    function calcDimensions (dimensions, fallback) {
+
+        var tmpWidth   = dimensions.width < fallback.width ? fallback.width : dimensions.width,
+            tmpHeight  = dimensions.height < fallback.height ? fallback.height : dimensions.height,
+            dimensions = {width: tmpWidth, height: tmpHeight, autoGrow: dimensions.autoGrow};
+
+        return dimensions;
+    };
+
+    /**
+     * Given the dimensions of the control view, figure out the
+     * best possible cellsize
+     * @return {Number}
+     * @private
+     */
+    function calcOptimalCellsize(d, mode) {
+
+        var w = d.width,
+            h = d.height,
+            obj = (mode === MODES[1]) ?
+                      {width : (w/7), height: (h/6)} :
+                      {width : (w/7), height: (h)}
+
+        return obj;
+    };
+
+
+    // Class functions   ----------------------------------------------------------------------
+
 
     /**
      * Constructor:
@@ -22,82 +144,66 @@
 
         var self                = this,
             opt                 = options,
-            default_mode        = MODES[2],
-            mode                = default_mode,
+            mode                = (opt.viewMode && $.inArray(opt.viewMode, MODES)!== -1) ?
+                                        opt.viewMode : MODES[2],
             parent_el_dimension,
             default_dimension ,
-            dimensions;
+            dimensions, render;
 
-        //Section: Initialize parameters -------------------------------
+        //Section: Initialize parameters ------------------------
 
         //Grab element selectors
-        self.anchorSelector = opt.rootSelector + " ." + MCAL_CLASS;
-
-        self.$mainLabel         = $(opt.rootSelector + " .label.label-main");
+        self.anchorSelector     = opt.rootSelector + " ." + MCAL_CLASS;
+        self.$mainLabel         = $(opt.rootSelector + " .label-main");
         self.$root              = $(opt.rootSelector);
-
-        //Set mode
-        if (opt.viewMode && $.inArray(opt.viewMode, MODES)!== -1) {
-            mode = opt.viewMode;
-        }
 
         //Set dimensions
         default_dimension   = (mode === MODES[0]) ? MIN_W_DIMENSIONS : (mode === MODES[1]) ? MIN_M_DIMENSIONS : MIN_F_DIMENSIONS;
         parent_el_dimension = { width: self.$root.width(), height: self.$root.height()}
 
         dimensions = options.dimensions ?
-            self._calcDimensions(options.dimensions, default_dimension) :
-            self._calcDimensions(parent_el_dimension, default_dimension);
+                        calcDimensions(options.dimensions, default_dimension) :
+                        calcDimensions(parent_el_dimension, default_dimension);
 
         //Set instance variables
-        self.mode = mode;
+        self.mode       = mode;
         self.dimensions = dimensions;
 
         self.meta       = opt.meta || {};
         self.showLabel  = determineLabelParam(opt.showLabel);
-        self.data = opt.data;
-        self.margin = opt.margin || {t:0, r:0, b:0, l:0};
+        self.data       = opt.data;
+        self.margin     = opt.margin || {t:0, r:0, b:0, l:0};
 
-        self.timestamp = (opt.accessors && opt.accessors.getTimestamp) ?
-            opt.accessors.getTimestamp : function (d) {return d._groupby};
+        self.timestamp  = (opt.accessors && opt.accessors.getTimestamp) ?
+                             opt.accessors.getTimestamp : function (d) {return d._groupby};
 
-        self.counts    = (opt.accessors && opt.accessors.getCount) ?
-            opt.accessors.getCount : function (d) {return d._count};
+        self.counts     = (opt.accessors && opt.accessors.getCount) ?
+                             opt.accessors.getCount : function (d) {return d._count};
 
-        self.onclick   = (opt.events && opt.events.onclick) ?
-            opt.events.onclick : $.noop;
+        self.onclick    = (opt.events && opt.events.onclick) ?
+                             opt.events.onclick : $.noop;
 
         self.onmouseover = (opt.events && opt.events.onmouseover) ?
-            opt.events.onmouseover : $.noop;
-
-        //If we are in month or week view ----
-        if ((mode !== MODES[2])) {
-
-            self._createSvg();
-            self.cellSize = self._calc_optimalCellsize();
-
-            if ((mode === MODES[0])) {
-
-                self._preprocessDataWeekView();
-                self._initWeekGrid();
-
-            } else {
-
-                self._preprocessDataMonthView();
-                self._initMonthGrid();
-            }
+                               opt.events.onmouseover : $.noop;
 
 
-        } else {
-            //We are in full view, and hence we render entirely differently
+        //Section: Call render functions  -------------------------
+        //  determine which mode we're in
+        //  and call appropriate render methods
+        render = (mode === MODES[2]) ?
+                    self._renderFullView: (mode === MODES[0]) ?
+                          self._renderWeekView :
+                          self._renderMonthView;
 
-            self._preprocessDataFullView();
-            self._createSvgForFullView();
-        }
+        render.apply(this);
 
 
+        //Section: Hide Labels  -----------------------------------
         //Once everything is rendered, we show and
         //hide the labels accordingly
+
+        self.$mainLabel.html(self.dateData.strDate)
+
         if(!self.showLabel.showMain) {
             $(opt.rootSelector + " .label-main").hide()
         }
@@ -110,6 +216,52 @@
             $(opt.rootSelector + " .label-month").hide()
         }
 
+    };
+
+
+    /**
+     * Call the appropriate functions to create and render
+     * the calendar in week view
+     * @private
+     */
+    Calendar.prototype._renderWeekView = function () {
+
+        var self = this;
+
+        self._createSvg();
+        self.cellSize = calcOptimalCellsize(self.dimensions, self.mode);
+
+        self._preprocessDataWeekView();
+        self._initWeekGrid();
+    };
+
+    /**
+     * Call the appropriate functions to create and render
+     * the calendar in month view
+     * @private
+     */
+    Calendar.prototype._renderMonthView = function () {
+
+        var self = this;
+
+        self._createSvg();
+        self.cellSize = calcOptimalCellsize(self.dimensions, self.mode);
+
+        self._preprocessDataMonthView();
+        self._initGenericMonthGrid();
+    };
+
+    /**
+     * Call the appropriate functions to create and render
+     * the calendar in full view
+     * @private
+     */
+    Calendar.prototype._renderFullView = function () {
+
+        var self = this;
+
+        self._preprocessDataFullView();
+        self._createSvgForFullView();
     };
 
 
@@ -132,9 +284,6 @@
         return nest;
     };
 
-    Calendar.prototype._tokenizeDateStr = function (date) {
-        return $.map(date.split("-"), function(item) { return parseInt(item, 10) });
-    };
 
     /**
      * We are in week mode, process the data needed
@@ -143,9 +292,9 @@
      */
     Calendar.prototype._preprocessDataWeekView = function () {
 
-        var self   = this,
-            format  = d3.time.format("%Y-%m-%d"),
-            normalizedData = [],
+        var self    = this,
+            format  = DAY_FORMAT,
+            nData   = [],
             tokens,
             nest;
 
@@ -155,26 +304,17 @@
             console.log("Warning: Data array contains elements that span over 7 days. Taking the first 7 days only")
         }
 
-        //Tokenize key to year, month and
-        //convert from months indexed starting from 1 to zero
-        //IE: from Jan = 1 to Jan = 0
-        tokens = nest[0].key.split("-");
-        tokens[0] = parseInt(tokens[0], 10);
-        tokens[1] = parseInt(tokens[1], 10) - 1;
-        tokens[2] = parseInt(tokens[2], 10);
+        tokens = tokenizeDateStr(nest[0].key);
 
         nest.forEach(function (item) {
-            normalizedData[item.key] =item.values;
+            nData[item.key] =item.values;
         })
 
         self.dateData = {month: tokens[1],
-            year:  tokens[0],
-            day:   tokens[2],
-            strDate: nest[0].key,
-            data: normalizedData};
-
-        //Set the data for the label
-        self.$mainLabel.html(self.dateData.strDate)
+                         year:  tokens[0],
+                         day:   tokens[2],
+                         strDate: nest[0].key,
+                         data: nData};
 
     };
 
@@ -189,24 +329,20 @@
     Calendar.prototype._preprocessDataMonthView = function () {
 
         var self           = this,
-            monthFormat    = d3.time.format("%Y-%m"),
-            dayFormat      = d3.time.format("%Y-%m-%d"),
-            normalizedData = {},
+            monthFormat    = MONTH_FORMAT,
+            dayFormat      = DAY_FORMAT,
+            nData          = {},
+            data           = self.data,
             tokens,
             nest;
 
-        nest = self._nestData(monthFormat, self.data);
+        nest = self._nestData(monthFormat, data);
 
         if(nest.length > 1) {
             console.log("Warning: Data array contains elements that span several months. Taking the first month only")
         }
 
-        //Tokenize key to year, month and
-        //convert from months indexed starting from 1 to zero
-        //IE: from Jan = 1 to Jan = 0
-        tokens = nest[0].key.split("-");
-        tokens[0] = parseInt(tokens[0], 10);
-        tokens[1] = parseInt(tokens[1], 10) - 1;
+        tokens = tokenizeDateStr(nest[0].key);
 
         // normalize -- create a map where each key is a day, and
         // value is an array containing all the matches
@@ -214,16 +350,14 @@
             .key(function(d) { return dayFormat(ISOToDate(self.timestamp(d)));})
             .entries(nest[0].values)
             .forEach(function (item) {
-                normalizedData[item.key] =item.values;
+                nData[item.key] = item.values;
             })
 
         self.dateData = {month: tokens[1],
-            year:  tokens[0],
-            strDate: MONTHS[tokens[1]] + " " + tokens[0],
-            data: normalizedData};
+                         year:  tokens[0],
+                         strDate: MONTHS[tokens[1]] + " " + tokens[0],
+                         data: nData};
 
-        //Set the data for the label
-        self.$mainLabel.html(self.dateData.strDate)
     };
 
     /**
@@ -234,15 +368,11 @@
     Calendar.prototype._preprocessDataFullView = function () {
 
         var self           = this,
+            nData          = {},
             data           = self.data,
-            monthFormat    = d3.time.format("%Y-%m"),
-            dayFormat      = d3.time.format("%Y-%m-%d"),
-            normalizedData = {},
-            index,
+            monthFormat    = MONTH_FORMAT,
+            dayFormat      = DAY_FORMAT,
             range,
-            obj,
-            key,
-            values,
             nest;
 
         nest = d3.nest()
@@ -252,55 +382,22 @@
 
         range = d3.extent(nest, function(d) {return d.key});
 
+        nest.forEach(function(index) {
 
-        for(index = 0 ; index < nest.length; index++) {
+            var obj    = {};
 
-            key    = nest[index].key;
-            values = nest[index].values;
-            obj = {};
+            index.values.forEach(function(item){
+                obj[item.key] = item.values;
+            })
 
-            values.forEach(function(item){ obj[item.key] = item.values;})
+            nData[index.key] = obj;
+        })
 
-            normalizedData[key] = obj;
-        }
+        self.dateData = {startRange: tokenizeDateStr(range[0]),
+                         endRange:  tokenizeDateStr(range[1]),
+                         strDate: range[0] +"/"+range[1],
+                         data: nData};
 
-        self.dateData = {startRange: self._tokenizeDateStr(range[0]),
-            endRange:  self._tokenizeDateStr(range[1]),
-            strDate: range[0] +"/"+range[1],
-            data: normalizedData};
-
-        self.$mainLabel.html(self.dateData.strDate)
-    };
-
-    /**
-     * ensure the dimensions don't have a width and height smaller than the default
-     * specified in the fallback object
-     */
-    Calendar.prototype._calcDimensions = function (dimensions, fallback) {
-
-        var tmpWidth   = dimensions.width < fallback.width ? fallback.width : dimensions.width,
-            tmpHeight  = dimensions.height < fallback.height ? fallback.height : dimensions.height,
-            dimensions = {width: tmpWidth, height: tmpHeight, autoGrow: dimensions.autoGrow};
-
-        return dimensions;
-    };
-
-    /**
-     * Given the dimensions of the control view, figure out the
-     * best possible cellsize
-     * @return {Number}
-     * @private
-     */
-    Calendar.prototype._calc_optimalCellsize = function () {
-
-        var self   = this,
-            width  = self.dimensions.width,
-            height = self.dimensions.height,
-            obj    = (self.mode === MODES[1]) ?
-            {width : (width/7), height: (height/6)} :
-            {width : (width/7), height: (height)}
-
-        return obj;
     };
 
     /**
@@ -321,7 +418,7 @@
         self.svg = d3.select(self.anchorSelector)
             .append("svg")
             .attr("class", "svg-window")
-            .attr("class", "calendar-"+mode)
+            .attr("class", "calendar-" + mode)
             .attr("width", width)
             .attr("height", height)
             .append("g");
@@ -338,15 +435,14 @@
         var self     = this,
             dateData = self.dateData,
             data     = dateData.data,
-            day      = d3.time.format("%w"),
-            format   = d3.time.format("%Y-%m-%d"),
+            format   = DAY_FORMAT,
             datum    = self._datum.bind(this, format, data),
             cellSize = self.cellSize,
             index    = 0,
             days;
 
         days = d3.time.days(new Date(dateData.year, dateData.month, dateData.day),
-            new Date(dateData.year, dateData.month, dateData.day + 7))
+                            new Date(dateData.year, dateData.month, dateData.day + 7))
 
         //Create a cell for each day in the 7 day period
         self.rect = self.svg
@@ -365,70 +461,34 @@
     };
 
     /**
-     * This function will draw the grid
+     * Renders the days in the month. If you pass in params (full year mode) it will use that data,
+     * otherwise we're in month mode and it pulls it from the dateData
      *
-     * @private
-     */
-    Calendar.prototype._initMonthGrid = function () {
-
-        var self     = this,
-            day      = d3.time.format("%w"),
-            format   = d3.time.format("%Y-%m-%d"),
-            data     = self.dateData.data,
-            cellSize = self.cellSize,
-            datum    = self._datum.bind(this, format, data),
-            index    = 0,
-            days;
-
-        function calcYOffset (d) {
-            index = (d.getDate() === 1) ? parseInt(day(d), 10) : index+1;
-            return ( Math.floor(index/7) * cellSize.height);
-        }
-
-        days = d3.time.days(new Date(self.dateData.year, self.dateData.month, 1),
-            new Date(self.dateData.year, self.dateData.month + 1, 1))
-
-        //Create a cell for each day in the month
-        self.rect = self.svg
-            .selectAll(".day")
-            .data(days)
-            .enter()
-            .append("rect")
-            .attr("width", cellSize.width)
-            .attr("height", cellSize.height)
-            .attr("x", function(d) { return (day(d) * cellSize.width);})
-            .attr("y", calcYOffset)
-            .datum(datum)
-            .on("click", self.onclick)
-            .on("mouseover", self.onmouseover);
-
-        self._finishLabelling();
-    };
-
-    /**
-     * This will draw the rect svg objects in the respective month svg elements
-     * @param key
      * @param cellSize
      * @param calData
      * @param days
+     * @param selector
      * @private
      */
-    Calendar.prototype._initFullViewGrid = function (key, cellSize, calData, days) {
+    Calendar.prototype._initGenericMonthGrid = function (cellSize, calData, days, selector) {
 
         var self     = this,
-            day      = d3.time.format("%w"),
-            format   = d3.time.format("%Y-%m-%d"),
-            data     = calData,
-            cellSize = cellSize,
+            day      = WEEK_DAY_FORMAT,
+            format   = DAY_FORMAT,
+            cellSize = cellSize || self.cellSize,
+            data     = calData  || self.dateData.data,
+            sel      = selector ? d3.select(selector) : self.svg,
             datum    = self._datum.bind(this, format, data),
+            days     = days || d3.time.days(new Date(self.dateData.year, self.dateData.month, 1),
+                                            new Date(self.dateData.year, self.dateData.month + 1, 1)),
             index    = 0;
 
         function calcYOffset (d) {
-            index = (d.getDate() === 1) ? parseInt(day(d), 10) : index+1;
+            index = (d.getDate() === 1) ? parseInt(day(d), 10) : index + 1;
             return ( Math.floor(index/7) * cellSize.height);
         }
 
-        self.rect = d3.select(self.anchorSelector + " .d"+key + " g")
+        self.rect = sel
             .selectAll(".day")
             .data(days)
             .enter()
@@ -446,6 +506,8 @@
     };
 
 
+
+
     /**
      * Restructure the format of the data bound to
      * the svg element
@@ -454,7 +516,7 @@
      * structure
      *
      * @param format
-     * @param data
+     * @param thedata
      * @param d
      * @return {Object}
      * @private
@@ -468,9 +530,9 @@
             sum       = d3.sum(matches, self.counts)
 
         return {date: dayFormat,
-            matches: matches,
-            sumMatchCount: sum,
-            meta: self.meta};
+                matches: matches,
+                sumMatchCount: sum,
+                meta: self.meta};
     }
 
     /**
@@ -515,15 +577,15 @@
             data      = self.dateData,
             numbYears = (data.endRange[0] - data.startRange[0]) + 1,
             height    = self.dimensions.autoGrow ?
-                self.dimensions.height - 2 :
-                Math.floor(self.dimensions.height/ numbYears) - 2,
+                            self.dimensions.height - 2 :
+                            Math.floor(self.dimensions.height / numbYears) - 2,
             width     = self.dimensions.width,
             mHeight   = height  - 2 - margin.t - margin.b,
             mWidth    = (width/12) -2 - margin.l - margin.r,
             cellSize  = {width : Math.floor((mWidth/7)), height: (mHeight/6) },
             format_m    = d3.time.format("%Y-%m");
 
-        console.log(self.dimensions)
+
         //Create svg containers
         self.yearWrapper = d3.select(self.anchorSelector)
             .selectAll("div")
@@ -537,7 +599,7 @@
 
         self.yearWrapper
             .append("div")
-            .attr("class", "label label-year")
+            .attr("class", GLABEL +" label-year")
             .attr("style", "position:absolute;")
             .text(function(d) { return d})
 
@@ -569,19 +631,17 @@
             .append("g")
             .each(function(d){
 
-                var token = d.split("-").map(function(item) {
-                    return parseInt(item, 10);
-                });
-
-                token[1] = token[1]-1;
-
-                var days = d3.time.days(new Date(token[0], token[1], 1),
-                    new Date(token[0], token[1] + 1, 1))
+                var token = tokenizeDateStr(d),
+                    days  = d3.time.days(new Date(token[0], token[1], 1),
+                                         new Date(token[0], token[1] + 1, 1))
 
                 $(this.parentNode.parentNode)
-                    .append("<div class='label label-month' style='position:absolute;'>" + MONTHS[token[1]] + "</div>")
+                    .append("<div class='"+ GLABEL +" label-month' style='position:absolute;'>" + MONTHS[token[1]] + "</div>")
 
-                self._initFullViewGrid(d, cellSize, self.dateData.data[d], days);
+                self._initGenericMonthGrid(cellSize,
+                                           self.dateData.data[d],
+                                           days,
+                                           self.anchorSelector + " .d"+d + " g");
             })
 
     };
@@ -649,63 +709,6 @@
         }
 
     };
-
-
-    /**
-     * Okay, we're not fully parsing an ISO because
-     * we're going to allow spaces and the lack of
-     * T and Z characters
-     * @param dateString
-     * @return {Date}
-     * @constructor
-     */
-    function ISOToDate (dateString) {
-
-        if (!dateString || typeof dateString !== 'string') {
-            throw new Error("Argument to ISOToDate must be a string");
-        }
-
-        var yyyy = parseInt(dateString.slice(0, 4), 10),
-            mm   = parseInt(dateString.slice(5, 7), 10) - 1,
-            dd   = parseInt(dateString.slice(8, 10), 10),
-            HH   = parseInt(dateString.slice(11, 13), 10),
-            MM   = parseInt(dateString.slice(14, 16), 10),
-            SS   = parseInt(dateString.slice(17, 19), 10),
-            dateObject = new Date(yyyy, mm, dd, HH, MM, SS);
-
-        return dateObject;
-    };
-
-    /**
-     * This is used to determine the correct show label parameter. The result
-     * of this function will be used to show and hide labels
-     * @param showLabel
-     * @return {Object}
-     */
-    function determineLabelParam (showLabel) {
-
-        var toRet = {showMain: false, showYear: false, showMonth:false};
-
-        if(!showLabel) {
-            return toRet;
-        }
-
-        if(typeof showLabel === 'boolean') {
-            toRet.showMain = showLabel;
-            return toRet;
-        }
-
-        if(typeof showLabel === 'object') {
-
-            toRet.showMain = !!showLabel.main;
-            toRet.showYear = !!showLabel.year;
-            toRet.showMonth =!!showLabel.month;
-
-            return toRet;
-        }
-
-        return toRet;
-    }
 
 
     $.fn.mcalendar = function(method) {
