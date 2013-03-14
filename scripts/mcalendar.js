@@ -703,7 +703,11 @@
             return this;
         },
 
-        reset : function () {
+        destroy : function () {
+
+            $(this).data(null);
+            d3.selectAll(this.selector + " svg").remove();
+            this.empty();
 
             return this;
         }
