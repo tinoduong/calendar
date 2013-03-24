@@ -166,6 +166,7 @@
                         calcDimensions(parent_el_dimension, default_dimension);
 
         //Set instance variables
+        self.maxMin     = [];
         self.mode       = mode;
         self.dimensions = dimensions;
 
@@ -218,6 +219,16 @@
 
     };
 
+
+    Calendar.prototype._setHeatMapParams = function (extent) {
+
+        var self = this;
+
+        self.maxMin = extent;
+
+        self.heatMapRange = d3.scale.linear().rangeRound([0,10]);
+        self.heatMapRange.domain(extent);
+    };
 
     /**
      * Call the appropriate functions to create and render
@@ -294,9 +305,10 @@
 
         var self    = this,
             format  = DAY_FORMAT,
-            nData   = [],
+            nData   = {},
             tokens,
-            nest;
+            nest,
+            maxMin;
 
         nest = self._nestData(format, self.data);
 
@@ -309,6 +321,14 @@
         nest.forEach(function (item) {
             nData[item.key] =item.values;
         })
+
+        //Calculate largest count and smallest count
+        maxMin = d3.extent(d3.values(nData),
+                           function(d) {
+                                return d3.sum(d, self.counts);
+                           });
+
+        self._setHeatMapParams(maxMin);
 
         self.dateData = {month: tokens[1],
                          year:  tokens[0],
@@ -334,7 +354,8 @@
             nData          = {},
             data           = self.data,
             tokens,
-            nest;
+            nest,
+            maxMin;
 
         nest = self._nestData(monthFormat, data);
 
@@ -352,6 +373,13 @@
             .forEach(function (item) {
                 nData[item.key] = item.values;
             })
+
+        //Calculate largest count and smallest count
+        maxMin = d3.extent(d3.values(nData),
+                           function(d) {
+                            return d3.sum(d, self.counts);
+                           });
+        self._setHeatMapParams(maxMin);
 
         self.dateData = {month: tokens[1],
                          year:  tokens[0],
@@ -373,7 +401,8 @@
             monthFormat    = MONTH_FORMAT,
             dayFormat      = DAY_FORMAT,
             range,
-            nest;
+            nest,
+            maxMin;
 
         nest = d3.nest()
             .key(function(d) { return monthFormat(ISOToDate(self.timestamp(d)));})
@@ -392,6 +421,13 @@
 
             nData[index.key] = obj;
         })
+
+        //Calculate largest count and smallest count
+        maxMin = d3.extent(self._nestData(DAY_FORMAT, data),
+                           function(d) {
+                                return d3.sum(d.values, self.counts);
+                           });
+        self._setHeatMapParams(maxMin);
 
         self.dateData = {startRange: tokenizeDateStr(range[0]),
                          endRange:  tokenizeDateStr(range[1]),
@@ -555,8 +591,10 @@
             }
 
             if(d.sumMatchCount > 0) {
-                toRet += "hascount";
+                toRet += "hascount ";
             }
+
+            toRet += "intensity-level-"+ self.heatMapRange(d.sumMatchCount);
 
             return toRet;
         }

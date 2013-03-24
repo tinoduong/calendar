@@ -9,6 +9,42 @@
     height:35px;
 }
 
+.intensity-level-0 {
+    fill:rgba(255,0,0,0);
+}
+.intensity-level-1 {
+    fill:rgba(255,0,0,0.1);
+}
+.intensity-level-2 {
+    fill:rgba(255,0,0,0.2);
+}
+.intensity-level-3 {
+    fill:rgba(255,0,0,0.3);
+}
+.intensity-level-4 {
+    fill:rgba(255,0,0,0.4);
+}
+.intensity-level-5 {
+    fill:rgba(255,0,0,0.5);
+}
+.intensity-level-6 {
+    fill:rgba(255,0,0,0.6);
+}
+.intensity-level-7 {
+    fill:rgba(255,0,0,0.7);
+}
+.intensity-level-8 {
+    fill:rgba(255,0,0,0.8);
+}
+.intensity-level-9 {
+    fill:rgba(255,0,0,0.9);
+}
+.intensity-level-10 {
+    fill:rgba(255,0,0,1);
+}
+
+
+
 .calendar-month{
 
     border: 1px solid rgba(0,0,0, 0.4);
@@ -37,15 +73,15 @@
 }
 
 
-.matched {
+/*.matched {*/
 
-    fill: rgba(255,0,0, 0.2);
-}
+    /*fill: rgba(255,0,0, 0.2);*/
+/*}*/
 
-.hascount {
+/*.hascount {*/
 
-    fill: rgba(255,0,0, 0.8);
-}
+    /*fill: rgba(255,0,0, 0.8);*/
+/*}*/
 
 #calendar-anchor3 .label-year {
 

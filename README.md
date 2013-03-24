@@ -34,6 +34,10 @@ label-main      : class for main label, in the case of the month and week view, 
 label-month     : class for each month label (**NOTE: this is absolutely positioned, set top, right, bottom, left)
 label-year      : class for each year label (**NOTE: this is absolutely positioned, set top, right, bottom, left)
 calendar-year   : class for wrapper div containing all elements for a year
+intensity-level-X : class to specify how many counts appear for a single day, ranges from 0-10. 0 being no counts, 10
+                    being Max number of accumulated counts per day in the passed in data set. Use this class
+                    in lieu of "matched" and "hascount" in order to give a heat-map effect.
+
 
 month-wrapper-do-not-style: this is a wrapper label used in the full view. It is recommend you DO NOT add style to this
 
